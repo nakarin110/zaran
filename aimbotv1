@@ -1,0 +1,332 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- บริการที่จำเป็น
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+-- ตัวแปรสำหรับ Aimbot
+local AimbotEnabled = false
+
+-- [[ บังคับใช้ LeftShift อย่างเดียว ]] --
+local AimLockKey = Enum.KeyCode.LeftShift 
+local AimSmoothness = 4
+local PredictionEnabled = false 
+local PredictionAmount = 0.165
+local AimMethod = "Mouse"
+
+-- ตัวแปร ESP
+local ESPEnabled = false
+local ESPHealthEnabled = false
+local FOVEnabled = false
+local FOVSize = 100
+local FOVCircle = Drawing.new("Circle")
+
+-- ตั้งค่าวงกลม FOV
+FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+FOVCircle.Thickness = 1
+FOVCircle.NumSides = 64
+FOVCircle.Radius = FOVSize
+FOVCircle.Filled = false
+FOVCircle.Visible = false
+FOVCircle.Transparency = 1
+
+-- สร้างหน้าต่างหลัก
+local Window = Rayfield:CreateWindow({
+   Name = "My Script - LeftShift Only",
+   LoadingTitle = "Loading...",
+   LoadingSubtitle = "Hold LeftShift to Lock",
+   ConfigurationSaving = {
+      Enabled = true,
+      FolderName = "MyScriptConfig",
+      FileName = "MyHubHold_LeftShiftOnly" -- เปลี่ยนชื่อไฟล์เซฟ
+   },
+   KeySystem = false,
+})
+
+local CombatTab = Window:CreateTab("Combat", 4483362458)
+local VisualTab = Window:CreateTab("Visuals", 4483362458)
+
+--------------------------------------------------------------------
+-- ฟังก์ชันเช็คปุ่ม (แบบ Fixed LeftShift)
+--------------------------------------------------------------------
+local function IsAimKeyDown()
+    -- เช็คปุ่ม LeftShift โดยตรง ไม่ต้องผ่านตัวแปรซับซ้อน
+    return UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+end
+
+--------------------------------------------------------------------
+-- ระบบ Aimbot (Combat Tab)
+--------------------------------------------------------------------
+
+CombatTab:CreateSection("Aimbot Main")
+
+CombatTab:CreateToggle({
+   Name = "Enable Aimbot (เปิดใช้งาน)",
+   CurrentValue = false,
+   Flag = "AimbotToggle", 
+   Callback = function(Value)
+      AimbotEnabled = Value
+   end,
+})
+
+-- [[ เอาปุ่มเปลี่ยน Keybind ออกแล้ว ]] --
+CombatTab:CreateLabel("Keybind: Left Shift (Fixed)")
+
+CombatTab:CreateDropdown({
+   Name = "Aim Method (วิธีการล็อก)",
+   Options = {"Mouse", "Camera"},
+   CurrentOption = "Mouse",
+   Flag = "AimMethodDrop",
+   Callback = function(Option)
+      AimMethod = Option[1]
+   end,
+})
+
+CombatTab:CreateSlider({
+   Name = "Smoothness (Higher = Slower)",
+   Range = {1, 20},
+   Increment = 0.5,
+   Suffix = "Speed",
+   CurrentValue = 4,
+   Flag = "SmoothSlider", 
+   Callback = function(Value)
+      AimSmoothness = Value
+   end,
+})
+
+CombatTab:CreateSection("Prediction")
+
+CombatTab:CreateToggle({
+   Name = "Prediction",
+   CurrentValue = false,
+   Flag = "PredToggle", 
+   Callback = function(Value)
+      PredictionEnabled = Value
+   end,
+})
+
+CombatTab:CreateSlider({
+   Name = "Prediction Amount",
+   Range = {0, 1},
+   Increment = 0.001,
+   Suffix = "ms",
+   CurrentValue = 0.165, 
+   Flag = "PredSlider", 
+   Callback = function(Value)
+      PredictionAmount = Value
+   end,
+})
+
+CombatTab:CreateSection("FOV Settings")
+
+CombatTab:CreateToggle({
+   Name = "Show FOV Circle",
+   CurrentValue = false,
+   Flag = "FOVToggle", 
+   Callback = function(Value)
+      FOVEnabled = Value
+      FOVCircle.Visible = Value
+   end,
+})
+
+CombatTab:CreateSlider({
+   Name = "FOV Size",
+   Range = {10, 500},
+   Increment = 10,
+   Suffix = "Px",
+   CurrentValue = 100,
+   Flag = "FOVSlider", 
+   Callback = function(Value)
+      FOVSize = Value
+      FOVCircle.Radius = Value
+   end,
+})
+
+--------------------------------------------------------------------
+-- ฟังก์ชันหาเป้าหมาย
+--------------------------------------------------------------------
+local function GetClosestPlayer()
+    local ClosestPlyr = nil
+    local ShortestDist = math.huge
+    local MousePos = UserInputService:GetMouseLocation()
+
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= LocalPlayer and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health > 0 and v.Character:FindFirstChild("Head") then
+            local ScreenPos, IsVisibleOnViewport = Camera:WorldToViewportPoint(v.Character.Head.Position)
+            if IsVisibleOnViewport then
+                local Magnitude = (Vector2.new(MousePos.X, MousePos.Y) - Vector2.new(ScreenPos.X, ScreenPos.Y)).Magnitude
+                
+                if Magnitude < FOVSize and Magnitude < ShortestDist then
+                    ClosestPlyr = v
+                    ShortestDist = Magnitude
+                end
+            end
+        end
+    end
+    return ClosestPlyr
+end
+
+--------------------------------------------------------------------
+-- Main Loop
+--------------------------------------------------------------------
+RunService.RenderStepped:Connect(function()
+    -- Update FOV Circle
+    local MousePos = UserInputService:GetMouseLocation()
+    FOVCircle.Position = Vector2.new(MousePos.X, MousePos.Y)
+    
+    -- เช็คปุ่มกดค้าง (ใช้ IsAimKeyDown ที่แก้แล้ว)
+    local isHolding = IsAimKeyDown()
+    
+    if isHolding then
+        FOVCircle.Color = Color3.fromRGB(0, 255, 0) -- เขียวเมื่อกด LeftShift
+    else
+        FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+    end
+
+    FOVCircle.Visible = FOVEnabled
+
+    -- ลอจิก Aimbot
+    if AimbotEnabled and isHolding then
+        local Target = GetClosestPlayer()
+        if Target and Target.Character and Target.Character:FindFirstChild("Head") then
+            local TargetHead = Target.Character.Head
+            
+            local Aim3DPos = TargetHead.Position
+            if PredictionEnabled and Target.Character:FindFirstChild("HumanoidRootPart") then
+                local Velocity = Target.Character.HumanoidRootPart.Velocity
+                Aim3DPos = Aim3DPos + (Velocity * PredictionAmount)
+            end
+            
+            if AimMethod == "Mouse" then
+                local ScreenPos, OnScreen = Camera:WorldToViewportPoint(Aim3DPos)
+                if OnScreen then
+                    local X = ScreenPos.X - MousePos.X
+                    local Y = ScreenPos.Y - MousePos.Y
+                    mousemoverel(X / AimSmoothness, Y / AimSmoothness)
+                end
+
+            elseif AimMethod == "Camera" then
+                local LerpVal = 1 - (AimSmoothness / 20) 
+                if LerpVal < 0.01 then LerpVal = 0.01 end
+                
+                local CurrentCFrame = Camera.CFrame
+                local TargetCFrame = CFrame.new(CurrentCFrame.Position, Aim3DPos)
+                Camera.CFrame = CurrentCFrame:Lerp(TargetCFrame, LerpVal)
+            end
+        end
+    end
+end)
+
+--------------------------------------------------------------------
+-- ระบบ ESP (Visuals Tab)
+--------------------------------------------------------------------
+VisualTab:CreateSection("ESP Settings")
+
+local function UpdateESP(player)
+   if player == LocalPlayer then return end
+   local char = player.Character
+   if not char then return end
+
+   local highlight = char:FindFirstChild("HighlightESP")
+   if ESPEnabled then
+       if not highlight then
+           highlight = Instance.new("Highlight")
+           highlight.Name = "HighlightESP"
+           highlight.FillColor = Color3.fromRGB(255, 0, 0)
+           highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+           highlight.FillTransparency = 0.5
+           highlight.OutlineTransparency = 0
+           highlight.Adornee = char
+           highlight.Parent = char
+       end
+   else
+       if highlight then highlight:Destroy() end
+   end
+
+   local head = char:FindFirstChild("Head")
+   local humanoid = char:FindFirstChild("Humanoid")
+   local healthBillboard = head and head:FindFirstChild("HealthESP_UI")
+
+   if ESPHealthEnabled and head and humanoid then
+       if not healthBillboard then
+           healthBillboard = Instance.new("BillboardGui")
+           healthBillboard.Name = "HealthESP_UI"
+           healthBillboard.AlwaysOnTop = true
+           healthBillboard.Size = UDim2.new(0, 100, 0, 40)
+           healthBillboard.StudsOffset = Vector3.new(0, 2.5, 0)
+           healthBillboard.Adornee = head
+           
+           local textLabel = Instance.new("TextLabel", healthBillboard)
+           textLabel.Name = "HealthText"
+           textLabel.BackgroundTransparency = 1
+           textLabel.Size = UDim2.new(1, 0, 1, 0)
+           textLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+           textLabel.TextStrokeTransparency = 0
+           textLabel.Font = Enum.Font.SourceSansBold
+           textLabel.TextSize = 14
+           healthBillboard.Parent = head
+       end
+
+       local hp = math.floor(humanoid.Health)
+       local maxHp = math.floor(humanoid.MaxHealth)
+       local textLabel = healthBillboard:FindFirstChild("HealthText")
+       if textLabel then
+           textLabel.Text = "HP: " .. hp .. " / " .. maxHp
+           textLabel.TextColor3 = Color3.fromRGB(255 - (hp/maxHp)*255, (hp/maxHp)*255, 0)
+       end
+   else
+       if healthBillboard then healthBillboard:Destroy() end
+   end
+end
+
+task.spawn(function()
+   while true do
+       if ESPEnabled or ESPHealthEnabled then
+           for _, player in pairs(Players:GetPlayers()) do
+               UpdateESP(player)
+           end
+       end
+       task.wait(0.1)
+   end
+end)
+
+VisualTab:CreateToggle({
+   Name = "Enable ESP Highlight",
+   CurrentValue = false,
+   Flag = "ESPToggle", 
+   Callback = function(Value)
+      ESPEnabled = Value
+      for _, player in pairs(Players:GetPlayers()) do
+         UpdateESP(player)
+      end
+   end,
+})
+
+VisualTab:CreateToggle({
+   Name = "Show Player Health",
+   CurrentValue = false,
+   Flag = "HealthToggle", 
+   Callback = function(Value)
+      ESPHealthEnabled = Value
+      for _, player in pairs(Players:GetPlayers()) do
+         UpdateESP(player)
+      end
+   end,
+})
+
+Players.PlayerAdded:Connect(function(player)
+   player.CharacterAdded:Connect(function()
+       task.wait(1)
+       UpdateESP(player)
+   end)
+end)
+
+Rayfield:Notify({
+   Title = "Script Loaded",
+   Content = "Fixed Hold Key: Left Shift Only",
+   Duration = 3,
+   Image = 4483362458,
+})

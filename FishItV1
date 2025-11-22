@@ -1,0 +1,240 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- ชื่อไฟล์บันทึกข้อมูล
+local FileName = "Fishing_Multi_Warp_Share.json"
+
+-- ตัวแปรเก็บข้อมูล
+local SavedLocations = {}
+local SelectedWarp = nil -- ชื่อวาร์ปที่เลือกใน Dropdown
+local InputName = ""     -- ชื่อวาร์ปที่พิมพ์เพื่อสร้างใหม่
+local ImportString = ""  -- โค้ดวาร์ปที่เพื่อนส่งมา
+
+-- ฟังก์ชันโหลดข้อมูล
+local function LoadData()
+    if isfile(FileName) then
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(readfile(FileName))
+        end)
+        if success and type(result) == "table" then
+            SavedLocations = result
+        end
+    end
+end
+
+-- ฟังก์ชันบันทึกข้อมูล
+local function SaveData()
+    writefile(FileName, HttpService:JSONEncode(SavedLocations))
+end
+
+-- โหลดข้อมูลเมื่อเริ่ม
+LoadData()
+
+local Window = Rayfield:CreateWindow({
+   Name = "Fishing System + Share Warp",
+   LoadingTitle = "Loading...",
+   LoadingSubtitle = "Catch / Sell / Share Warps",
+   ConfigurationSaving = { Enabled = true, FolderName = "FishLogConfig", FileName = "Hub_Settings" },
+   KeySystem = false,
+})
+
+local MainTab = Window:CreateTab("Main System", 4483362458)
+local WarpTab = Window:CreateTab("Warp Manager", 4483362458)
+
+-- ==========================================
+-- Remote & Main System
+-- ==========================================
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Net = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net")
+
+local FinishGame = Net:WaitForChild("RE/FishingCompleted")
+local SellItems = Net:WaitForChild("RF/SellAllItems")
+
+local function Notify(title, msg)
+   Rayfield:Notify({ Title = title, Content = msg, Duration = 3, Image = 4483362458 })
+end
+
+MainTab:CreateSection("Fishing Tools")
+MainTab:CreateButton({
+   Name = "Force Catch (กดเพื่อดึงปลาทันที)",
+   Callback = function()
+      pcall(function()
+          FinishGame:FireServer()
+          Notify("Success", "ส่งคำสั่งดึงปลาแล้ว!")
+      end)
+   end,
+})
+
+MainTab:CreateSection("Selling")
+MainTab:CreateButton({
+   Name = "Sell All Items (ขายของทั้งหมด)",
+   Callback = function()
+      pcall(function()
+          SellItems:InvokeServer()
+          Notify("Sold", "ขายปลาทั้งหมดเรียบร้อยแล้ว")
+      end)
+   end,
+})
+
+-- ==========================================
+-- Warp System (Create & Teleport)
+-- ==========================================
+
+local WarpDropdown -- ประกาศล่วงหน้า
+
+WarpTab:CreateSection("Create New Waypoint")
+
+WarpTab:CreateInput({
+   Name = "Warp Name (ตั้งชื่อจุดวาร์ป)",
+   PlaceholderText = "เช่น ร้านขายปลา",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+      InputName = Text
+   end,
+})
+
+WarpTab:CreateButton({
+   Name = "Save Current Position (บันทึกจุดนี้)",
+   Callback = function()
+      if InputName == "" then
+         Notify("Error", "กรุณาตั้งชื่อจุดวาร์ปก่อน")
+         return
+      end
+
+      local char = LocalPlayer.Character
+      if char and char:FindFirstChild("HumanoidRootPart") then
+         local hrp = char.HumanoidRootPart.CFrame
+         
+         SavedLocations[InputName] = { x = hrp.X, y = hrp.Y, z = hrp.Z }
+         SaveData()
+         
+         Notify("Saved", "บันทึก '"..InputName.."' แล้ว")
+         
+         -- Refresh Dropdown
+         local list = {}
+         for name, _ in pairs(SavedLocations) do table.insert(list, name) end
+         WarpDropdown:Refresh(list)
+      else
+         Notify("Error", "ไม่พบตัวละคร")
+      end
+   end,
+})
+
+WarpTab:CreateSection("Select & Teleport")
+
+local warpList = {}
+for name, _ in pairs(SavedLocations) do table.insert(warpList, name) end
+
+WarpDropdown = WarpTab:CreateDropdown({
+   Name = "Select Waypoint (เลือกจุดวาร์ป)",
+   Options = warpList,
+   CurrentOption = "",
+   MultipleOptions = false,
+   Flag = "WarpDropdown",
+   Callback = function(Option)
+       SelectedWarp = Option[1]
+   end,
+})
+
+WarpTab:CreateButton({
+   Name = "Teleport (วาร์ปไปเลย)",
+   Callback = function()
+      if SelectedWarp and SavedLocations[SelectedWarp] then
+         local data = SavedLocations[SelectedWarp]
+         local char = LocalPlayer.Character
+         if char and char:FindFirstChild("HumanoidRootPart") then
+             char.HumanoidRootPart.CFrame = CFrame.new(data.x, data.y, data.z)
+             Notify("Teleported", "วาร์ปไปที่: " .. SelectedWarp)
+         end
+      else
+         Notify("Error", "กรุณาเลือกจุดวาร์ปก่อน")
+      end
+   end,
+})
+
+WarpTab:CreateButton({
+   Name = "Delete Selected (ลบจุดนี้ทิ้ง)",
+   Callback = function()
+      if SelectedWarp and SavedLocations[SelectedWarp] then
+         SavedLocations[SelectedWarp] = nil
+         SaveData()
+         
+         Notify("Deleted", "ลบจุด '"..SelectedWarp.."' แล้ว")
+         
+         local list = {}
+         for name, _ in pairs(SavedLocations) do table.insert(list, name) end
+         WarpDropdown:Refresh(list)
+         SelectedWarp = nil
+      else
+         Notify("Error", "ไม่พบจุดที่จะลบ")
+      end
+   end,
+})
+
+-- ==========================================
+-- Share System (ระบบแชร์)
+-- ==========================================
+
+WarpTab:CreateSection("Share & Import Waypoint")
+
+WarpTab:CreateButton({
+   Name = "Copy Code (คัดลอกโค้ดจุดที่เลือก)",
+   Callback = function()
+      if SelectedWarp and SavedLocations[SelectedWarp] then
+         -- สร้างข้อมูลสำหรับแชร์
+         local shareData = {
+            name = SelectedWarp,
+            pos = SavedLocations[SelectedWarp]
+         }
+         
+         -- แปลงเป็น JSON
+         local jsonString = HttpService:JSONEncode(shareData)
+         
+         -- ก็อปปี้ลง Clipboard
+         setclipboard(jsonString)
+         Notify("Copied", "คัดลอกโค้ดแล้ว! ส่งให้เพื่อนได้เลย")
+      else
+         Notify("Error", "กรุณาเลือกจุดวาร์ปที่ต้องการแชร์ก่อน")
+      end
+   end,
+})
+
+WarpTab:CreateInput({
+   Name = "Import Code (ใส่โค้ดจากเพื่อน)",
+   PlaceholderText = "วางโค้ดที่นี่...",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+      ImportString = Text
+   end,
+})
+
+WarpTab:CreateButton({
+   Name = "Add/Import Waypoint (เพิ่มจุดวาร์ป)",
+   Callback = function()
+      if ImportString == "" then
+         Notify("Error", "กรุณาใส่โค้ดก่อน")
+         return
+      end
+
+      local success, decoded = pcall(function()
+         return HttpService:JSONDecode(ImportString)
+      end)
+
+      if success and decoded.name and decoded.pos and decoded.pos.x then
+         -- เพิ่มลงในรายการของเรา
+         SavedLocations[decoded.name] = decoded.pos
+         SaveData()
+         
+         Notify("Success", "เพิ่มจุด '"..decoded.name.."' เรียบร้อย!")
+         
+         -- Refresh Dropdown
+         local list = {}
+         for name, _ in pairs(SavedLocations) do table.insert(list, name) end
+         WarpDropdown:Refresh(list)
+      else
+         Notify("Error", "โค้ดไม่ถูกต้อง หรือรูปแบบผิด")
+      end
+   end,
+})

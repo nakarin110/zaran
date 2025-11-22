@@ -1,0 +1,376 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- ระบบบันทึกข้อมูลที่รองรับการรีเกม
+local SaveFileName = "ModernHubAutoSave_V2.json"
+local SaveData = {
+    AutoBuyWater = false,
+    AutoBuySeeds = false,
+    BuyDelay = 1,
+    SelectedSeeds = {}
+}
+
+-- ตรวจสอบว่ามีฟังก์ชันสำหรับบันทึกไฟล์หรือไม่
+local canSave = pcall(function() return readfile and writefile end)
+
+-- โหลดข้อมูลที่บันทึกไว้
+local function LoadSettings()
+    if not canSave then
+        warn("⚠️ ระบบไม่รองรับการบันทึกไฟล์")
+        return false
+    end
+    
+    local success, data = pcall(function()
+        if isfile(SaveFileName) then
+            local content = readfile(SaveFileName)
+            return game:GetService("HttpService"):JSONDecode(content)
+        end
+        return nil
+    end)
+    
+    if success and data then
+        SaveData = data
+        print("✅ โหลดการตั้งค่าสำเร็จ!")
+        print("💧 น้ำโค้ก: " .. (SaveData.AutoBuyWater and "เปิด ✓" or "ปิด ✗"))
+        print("🌱 ต้นไม้: " .. (SaveData.AutoBuySeeds and "เปิด ✓" or "ปิด ✗"))
+        return true
+    else
+        print("ℹ️ ไม่พบข้อมูลที่บันทึกไว้ - ใช้ค่าเริ่มต้น")
+        return false
+    end
+end
+
+-- บันทึกข้อมูล
+local function SaveSettings()
+    if not canSave then return end
+    
+    local success = pcall(function()
+        local json = game:GetService("HttpService"):JSONEncode(SaveData)
+        writefile(SaveFileName, json)
+    end)
+    
+    if success then
+        print("💾 บันทึกการตั้งค่าสำเร็จ!")
+    else
+        warn("⚠️ ไม่สามารถบันทึกได้")
+    end
+end
+
+-- โหลดการตั้งค่าก่อนสร้าง UI
+local settingsLoaded = LoadSettings()
+
+-- Create main window
+local Window = Rayfield:CreateWindow({
+   Name = "🌟 Modern Hub V2 - Auto Buy",
+   LoadingTitle = "Modern Hub Loading...",
+   LoadingSubtitle = "by Modern Team",
+   ConfigurationSaving = {
+      Enabled = false  -- ปิดระบบบันทึกของ Rayfield เพราะเราใช้ของเราเอง
+   }
+})
+
+-- Create tabs
+local AutoBuyTab = Window:CreateTab("🛒 Auto Buy", 6034287594)
+local SettingsTab = Window:CreateTab("⚙️ Settings", 6034996695)
+
+-- Create sections
+local WaterSection = AutoBuyTab:CreateSection("💧 น้ำโค้ก")
+local SeedSection = AutoBuyTab:CreateSection("🌱 ต้นไม้")
+local StatusSection = SettingsTab:CreateSection("📊 สถานะ")
+
+-- Variables (ใช้ค่าที่โหลดมา)
+local AutoBuyWaterEnabled = SaveData.AutoBuyWater
+local AutoBuySeedsEnabled = SaveData.AutoBuySeeds
+local BuyDelay = SaveData.BuyDelay
+
+-- รายการต้นไม้ทั้งหมด
+local SeedList = {
+    "Watermelon Seed",
+    "Grape Seed",
+    "Cocotank Seed",
+    "Carnivorous Plant Seed",
+    "Mr Carrot Seed",
+    "Tomatrio Seed",
+    "Shroombino Seed",
+    "Mango Seed",
+    "King Limone Seed",
+    "Starfruit Seed"
+}
+
+-- เก็บสถานะการเลือกต้นไม้ (โหลดจากข้อมูลที่บันทึก)
+local SelectedSeeds = {}
+for _, seed in pairs(SeedList) do
+    SelectedSeeds[seed] = SaveData.SelectedSeeds[seed] or false
+end
+
+-- ฟังก์ชันซื้อน้ำโค้ก
+local function BuyWater()
+    if not AutoBuyWaterEnabled then return end
+    
+    local success, error = pcall(function()
+        local args = {
+            "Water Bucket",
+            true
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("BuyGear"):FireServer(unpack(args))
+    end)
+    
+    if not success then
+        warn("เกิดข้อผิดพลาดในการซื้อน้ำ: " .. tostring(error))
+    end
+end
+
+-- ฟังก์ชันซื้อต้นไม้
+local function BuySeeds()
+    if not AutoBuySeedsEnabled then return end
+    
+    for seedName, isSelected in pairs(SelectedSeeds) do
+        if isSelected then
+            local success, error = pcall(function()
+                local args = {
+                    seedName,
+                    true
+                }
+                game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("BuyItem"):FireServer(unpack(args))
+            end)
+            
+            if not success then
+                warn("เกิดข้อผิดพลาดในการซื้อ " .. seedName .. ": " .. tostring(error))
+            end
+            
+            wait(0.1)
+        end
+    end
+end
+
+-- สร้าง Toggle สำหรับน้ำโค้ก
+local WaterToggle = AutoBuyTab:CreateToggle({
+   Name = "🔄 Auto Buy น้ำโค้ก",
+   CurrentValue = AutoBuyWaterEnabled,
+   Flag = "AutoBuyWater",
+   Callback = function(Value)
+      AutoBuyWaterEnabled = Value
+      SaveData.AutoBuyWater = Value
+      SaveSettings()
+      
+      if Value then
+          Rayfield:Notify({
+             Title = "เปิดใช้งาน ✓",
+             Content = "เริ่มซื้อน้ำโค้กอัตโนมัติ (บันทึกแล้ว)",
+             Duration = 3,
+             Image = 4483362458
+          })
+      else
+          Rayfield:Notify({
+             Title = "ปิดใช้งาน ✗",
+             Content = "หยุดซื้อน้ำโค้กอัตโนมัติ (บันทึกแล้ว)",
+             Duration = 3,
+             Image = 4483362458
+          })
+      end
+   end,
+})
+
+-- สร้าง Toggle สำหรับต้นไม้แต่ละชนิด
+for _, seedName in ipairs(SeedList) do
+    AutoBuyTab:CreateToggle({
+       Name = "🌱 " .. seedName,
+       CurrentValue = SelectedSeeds[seedName],
+       Flag = "Seed_" .. seedName,
+       Callback = function(Value)
+          SelectedSeeds[seedName] = Value
+          SaveData.SelectedSeeds[seedName] = Value
+          SaveSettings()
+       end,
+    })
+end
+
+-- สร้าง Toggle เปิด/ปิด Auto Buy ต้นไม้
+local SeedToggle = AutoBuyTab:CreateToggle({
+   Name = "🔄 เริ่ม Auto Buy ต้นไม้",
+   CurrentValue = AutoBuySeedsEnabled,
+   Flag = "AutoBuySeeds",
+   Callback = function(Value)
+      AutoBuySeedsEnabled = Value
+      SaveData.AutoBuySeeds = Value
+      SaveSettings()
+      
+      if Value then
+          local selectedCount = 0
+          for _, isSelected in pairs(SelectedSeeds) do
+              if isSelected then selectedCount = selectedCount + 1 end
+          end
+          
+          Rayfield:Notify({
+             Title = "เปิดใช้งาน ✓",
+             Content = "เริ่มซื้อต้นไม้ " .. selectedCount .. " ชนิด (บันทึกแล้ว)",
+             Duration = 3,
+             Image = 4483362458
+          })
+      else
+          Rayfield:Notify({
+             Title = "ปิดใช้งาน ✗",
+             Content = "หยุดซื้อต้นไม้อัตโนมัติ (บันทึกแล้ว)",
+             Duration = 3,
+             Image = 4483362458
+          })
+      end
+   end,
+})
+
+-- สร้าง Slider สำหรับความเร็วการซื้อ
+local DelaySlider = SettingsTab:CreateSlider({
+   Name = "⏱️ ความเร็วการซื้อ (วินาที)",
+   Range = {0.5, 10},
+   Increment = 0.5,
+   Suffix = "วินาที",
+   CurrentValue = BuyDelay,
+   Flag = "BuyDelay",
+   Callback = function(Value)
+      BuyDelay = Value
+      SaveData.BuyDelay = Value
+      SaveSettings()
+   end,
+})
+
+-- ปุ่มซื้อทันที
+local WaterButton = AutoBuyTab:CreateButton({
+   Name = "💧 ซื้อน้ำโค้กทันที",
+   Callback = function()
+      BuyWater()
+      Rayfield:Notify({
+         Title = "ซื้อสำเร็จ",
+         Content = "ซื้อน้ำโค้ก 1 ครั้ง",
+         Duration = 2,
+         Image = 4483362458
+      })
+   end,
+})
+
+local SeedButton = AutoBuyTab:CreateButton({
+   Name = "🌱 ซื้อต้นไม้ที่เลือกทันที",
+   Callback = function()
+      BuySeeds()
+      local selectedCount = 0
+      for _, isSelected in pairs(SelectedSeeds) do
+          if isSelected then selectedCount = selectedCount + 1 end
+      end
+      Rayfield:Notify({
+         Title = "ซื้อสำเร็จ",
+         Content = "ซื้อต้นไม้ " .. selectedCount .. " ชนิด",
+         Duration = 2,
+         Image = 4483362458
+      })
+   end,
+})
+
+-- สร้าง Label แสดงสถานะ
+local StatusLabel = SettingsTab:CreateLabel("สถานะ: กำลังโหลด...")
+
+-- แสดงข้อมูลที่โหลด
+if settingsLoaded then
+    SettingsTab:CreateLabel("✅ โหลดการตั้งค่าล่าสุดสำเร็จ")
+else
+    SettingsTab:CreateLabel("ℹ️ ใช้การตั้งค่าเริ่มต้น")
+end
+
+local WaterStatusLabel = SettingsTab:CreateLabel("💧 น้ำโค้ก: " .. (AutoBuyWaterEnabled and "เปิด ✓" or "ปิด ✗"))
+local SeedStatusLabel = SettingsTab:CreateLabel("🌱 ต้นไม้: " .. (AutoBuySeedsEnabled and "เปิด ✓" or "ปิด ✗"))
+
+local selectedCount = 0
+for _, isSelected in pairs(SelectedSeeds) do
+    if isSelected then selectedCount = selectedCount + 1 end
+end
+SettingsTab:CreateLabel("🎯 ต้นไม้ที่เลือก: " .. selectedCount .. " ชนิด")
+SettingsTab:CreateLabel("⏱️ ความเร็ว: " .. BuyDelay .. " วินาที")
+
+-- ปุ่มรีเซ็ตการตั้งค่า
+local ResetButton = SettingsTab:CreateButton({
+   Name = "🔄 รีเซ็ตการตั้งค่าทั้งหมด",
+   Callback = function()
+      if canSave then
+          pcall(function()
+              if isfile(SaveFileName) then
+                  delfile(SaveFileName)
+              end
+          end)
+      end
+      
+      Rayfield:Notify({
+         Title = "รีเซ็ตสำเร็จ",
+         Content = "ลบไฟล์บันทึกแล้ว - กรุณารีเกมเพื่อใช้ค่าเริ่มต้น",
+         Duration = 5,
+         Image = 4483362458
+      })
+   end,
+})
+
+-- Loop หลักสำหรับซื้ออัตโนมัติ
+spawn(function()
+    while wait(BuyDelay) do
+        local status = "สถานะ: "
+        
+        if AutoBuyWaterEnabled then
+            BuyWater()
+            status = status .. "🔄 ซื้อน้ำ | "
+        end
+        
+        if AutoBuySeedsEnabled then
+            BuySeeds()
+            local count = 0
+            for _, isSelected in pairs(SelectedSeeds) do
+                if isSelected then count = count + 1 end
+            end
+            status = status .. "🔄 ซื้อต้นไม้ " .. count .. " ชนิด"
+        end
+        
+        if not AutoBuyWaterEnabled and not AutoBuySeedsEnabled then
+            status = "สถานะ: รอคำสั่ง..."
+        end
+        
+        StatusLabel:Set(status)
+    end
+end)
+
+-- ตรวจสอบการรีเกม และบันทึกอัตโนมัติก่อนรีเกม
+game.Players.LocalPlayer.CharacterAdded:Connect(function()
+    wait(1)
+    print("🔄 ตรวจพบการรีเกม - กำลังโหลดการตั้งค่า...")
+    
+    -- ไม่ต้องโหลดใหม่ เพราะการตั้งค่ายังคงอยู่ในหน่วยความจำ
+    -- แต่จะแสดงสถานะปัจจุบัน
+    if AutoBuyWaterEnabled then
+        print("✓ น้ำโค้ก: ยังเปิดอยู่")
+    end
+    if AutoBuySeedsEnabled then
+        print("✓ ต้นไม้: ยังเปิดอยู่")
+    end
+end)
+
+-- Notification เมื่อโหลดเสร็จ
+Rayfield:Notify({
+   Title = "Modern Hub V2 Loaded ✓",
+   Content = settingsLoaded and "โหลดการตั้งค่าล่าสุดสำเร็จ!" or "ใช้การตั้งค่าเริ่มต้น",
+   Duration = 5,
+   Image = 11695805807
+})
+
+print("========================================")
+print("🌟 Modern Hub V2 - Auto Buy System")
+print("========================================")
+print("📌 คุณสมบัติ:")
+print("   ✓ Auto Buy น้ำโค้ก")
+print("   ✓ Auto Buy ต้นไม้ 10 ชนิด")
+print("   ✓ ปรับความเร็วการซื้อได้")
+print("   ✓ ซื้อทันทีด้วยปุ่ม")
+print("   ✓ 💾 จดจำการตั้งค่า (รองรับรีเกม)")
+print("")
+print("📊 การตั้งค่าปัจจุบัน:")
+print("   💧 น้ำโค้ก: " .. (AutoBuyWaterEnabled and "เปิด ✓" or "ปิด ✗"))
+print("   🌱 ต้นไม้: " .. (AutoBuySeedsEnabled and "เปิด ✓" or "ปิด ✗"))
+print("   ⏱️ ความเร็ว: " .. BuyDelay .. " วินาที")
+print("   🎯 ต้นไม้ที่เลือก: " .. selectedCount .. " ชนิด")
+print("========================================")
+
+if not canSave then
+    warn("⚠️ ไม่สามารถบันทึกการตั้งค่าได้ (Executor ไม่รองรับ)")
+end
